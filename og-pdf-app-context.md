@@ -23,6 +23,9 @@ The **PDF Viewer Desktop App** is a desktop application that allows users to upl
 - Browse and open PDF  
 - PDF preview using pdf.js  
 - Page navigation & zoom  
+- Text search with highlighting  
+- Navigate through search results  
+- Rotation & download  
 - Package as Windows EXE  
 
 ---
@@ -74,8 +77,12 @@ root/
 2. File browsing upload  
 3. PDF preview  
 4. Page navigation  
-5. Zoom  
-6. EXE packaging  
+5. Zoom in/out  
+6. Text search with highlighting  
+7. Search result navigation  
+8. Rotate pages  
+9. Download PDF  
+10. EXE packaging  
 
 ---
 

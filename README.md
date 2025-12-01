@@ -8,6 +8,8 @@ A modern, professional PDF viewer desktop application built with **Next.js**, **
 - 📄 **PDF Preview** - High-quality PDF rendering using PDF.js
 - 🔍 **Zoom Controls** - Zoom in/out with precision controls
 - 📑 **Page Navigation** - Navigate through pages with intuitive controls
+- 🔎 **Text Search** - Search for text in PDFs with yellow highlighting
+- ⬆️⬇️ **Search Navigation** - Navigate through search results with prev/next buttons
 - 🔄 **Rotation** - Rotate PDF pages for better viewing
 - 💾 **Download** - Download PDFs with a single click
 - 🎨 **Modern UI** - Beautiful, premium design with dark mode support
@@ -115,9 +117,17 @@ og-pdf-app/
 3. **View your PDF** with the following controls:
    - **Previous/Next** - Navigate between pages
    - **Zoom In/Out** - Adjust the zoom level
+   - **Search** - Click the search icon to open the search bar
    - **Rotate** - Rotate the page view
    - **Download** - Save the PDF to your device
-4. **Clear the file** by clicking the X button to upload a new PDF
+4. **Search for text**:
+   - Click the **Search** icon (magnifying glass)
+   - Type your search query and press Enter or click "Search"
+   - Found text will be highlighted in yellow on the page
+   - Use the **up/down arrow buttons** to navigate through results
+   - View the match counter (e.g., "1 / 5") to see your position
+   - Click the **X** in the search input to clear your query
+5. **Clear the file** by clicking the X button to upload a new PDF
 
 ## 🔧 Configuration
 
