@@ -33,14 +33,14 @@ export default function Home() {
       <main className="container mx-auto px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           {/* Hero Section */}
-          <div className="mb-8 text-center">
+          {/* <div className="mb-8 text-center">
             <h2 className="mb-3 text-4xl font-bold text-gray-900 dark:text-white sm:text-5xl">
               Professional PDF Viewer
             </h2>
             <p className="text-lg text-gray-600 dark:text-gray-400">
               Upload, view, and manage your PDF documents with ease
             </p>
-          </div>
+          </div> */}
 
           {/* File Upload Section */}
           <div className="mb-8">

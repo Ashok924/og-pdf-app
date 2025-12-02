@@ -15,13 +15,18 @@ interface PDFViewerProps {
 
 interface SearchMatch {
     pageNum: number;
-    matchIndex: number;
+    textIndex: number;
+    charIndex: number;
 }
 
 export default function PDFViewer({ file }: PDFViewerProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const highlightLayerRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const renderTaskRef = useRef<any>(null);
     const searchContainerRef = useRef<HTMLDivElement>(null);
+
+    // PDF State
     const [pdfDoc, setPdfDoc] = useState<any>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(0);
@@ -29,13 +34,14 @@ export default function PDFViewer({ file }: PDFViewerProps) {
     const [rotation, setRotation] = useState(0);
     const [loading, setLoading] = useState(true);
 
-    // Search state
+    // Search State
     const [searchQuery, setSearchQuery] = useState('');
     const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
     const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
     const [showSearch, setShowSearch] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
 
+    // Load PDF
     useEffect(() => {
         const loadPDF = async () => {
             setLoading(true);
@@ -74,6 +80,7 @@ export default function PDFViewer({ file }: PDFViewerProps) {
         loadPDF();
     }, [file]);
 
+    // Render Page
     useEffect(() => {
         let isCancelled = false;
 
@@ -116,9 +123,12 @@ export default function PDFViewer({ file }: PDFViewerProps) {
 
                 await renderTask.promise;
 
-                // Highlight search matches on current page
-                if (searchQuery.trim() && context) {
-                    await highlightSearchMatches(page, context, viewport);
+                // Render highlights after page is rendered
+                // We pass the page and viewport explicitly to ensure we use the current render state
+                if (searchQuery.trim()) {
+                    await renderHighlights(page, viewport);
+                } else if (highlightLayerRef.current) {
+                    highlightLayerRef.current.innerHTML = '';
                 }
 
                 // Only clear the ref if this render wasn't cancelled
@@ -146,12 +156,15 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                 renderTaskRef.current = null;
             }
         };
-    }, [pdfDoc, currentPage, scale, rotation, searchQuery]);
+    }, [pdfDoc, currentPage, scale, rotation, searchQuery, currentMatchIndex, searchMatches]); // Added search dependencies to re-render highlights
 
-    // Search functionality
+    // Search Functionality
     const performSearch = async () => {
         if (!pdfDoc || !searchQuery.trim()) {
             setSearchMatches([]);
+            if (highlightLayerRef.current) {
+                highlightLayerRef.current.innerHTML = '';
+            }
             return;
         }
 
@@ -162,18 +175,22 @@ export default function PDFViewer({ file }: PDFViewerProps) {
             for (let i = 1; i <= totalPages; i++) {
                 const page = await pdfDoc.getPage(i);
                 const textContent = await page.getTextContent();
-                const text = textContent.items.map((item: any) => item.str).join(' ');
 
-                const searchTerm = searchQuery.toLowerCase();
-                const textLower = text.toLowerCase();
-                let startIndex = 0;
-                let matchIndex = 0;
+                textContent.items.forEach((item: any, textIndex: number) => {
+                    const text = item.str;
+                    const searchTerm = searchQuery.toLowerCase();
+                    const textLower = text.toLowerCase();
+                    let charIndex = 0;
 
-                while ((startIndex = textLower.indexOf(searchTerm, startIndex)) !== -1) {
-                    matches.push({ pageNum: i, matchIndex });
-                    startIndex += searchTerm.length;
-                    matchIndex++;
-                }
+                    while ((charIndex = textLower.indexOf(searchTerm, charIndex)) !== -1) {
+                        matches.push({
+                            pageNum: i,
+                            textIndex,
+                            charIndex
+                        });
+                        charIndex += searchTerm.length;
+                    }
+                });
             }
 
             setSearchMatches(matches);
@@ -190,58 +207,79 @@ export default function PDFViewer({ file }: PDFViewerProps) {
         }
     };
 
-    const highlightSearchMatches = async (page: any, context: CanvasRenderingContext2D, viewport: any) => {
-        if (!searchQuery.trim()) return;
+    const renderHighlights = async (page: any, viewport: any) => {
+        if (!highlightLayerRef.current || !searchQuery.trim()) return;
+
+        const highlightLayer = highlightLayerRef.current;
+        highlightLayer.innerHTML = '';
+
+        // Set highlight layer dimensions to match canvas
+        highlightLayer.style.width = `${viewport.width}px`;
+        highlightLayer.style.height = `${viewport.height}px`;
 
         try {
+            // Get text content for current page
             const textContent = await page.getTextContent();
             const searchTerm = searchQuery.toLowerCase();
 
-            context.save();
-            context.fillStyle = 'rgba(255, 255, 0, 0.5)';
+            // Get matches for current page
+            const currentPageMatches = searchMatches.filter(m => m.pageNum === currentPage);
 
-            textContent.items.forEach((item: any) => {
-                const text = item.str;
-                const textLower = text.toLowerCase();
+            currentPageMatches.forEach((match) => {
+                const item = textContent.items[match.textIndex];
+                if (!item) return;
 
-                // Find all occurrences of the search term in this text item
-                let matchStartIndex = 0;
+                // Recalculate position for current viewport
+                const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
 
-                while ((matchStartIndex = textLower.indexOf(searchTerm, matchStartIndex)) !== -1) {
-                    // Get the transform for this text item  
-                    const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+                // Calculate dimensions
+                // item.width is the width in PDF units
+                // item.height is the height in PDF units
+                const fontHeight = Math.sqrt(tx[2] * tx[2] + tx[3] * tx[3]);
+                const itemHeight = item.height > 0 ? item.height * viewport.scale : fontHeight;
 
-                    // Approximate character width
-                    const itemWidth = item.width || 0;
-                    const charWidth = itemWidth / (text.length || 1);
+                const itemWidth = item.width * viewport.scale;
+                const charWidth = itemWidth / (item.str.length || 1);
 
-                    // Calculate position and size of highlight
-                    const highlightX = tx[4] + (charWidth * matchStartIndex);
-                    const highlightY = tx[5];
-                    const highlightWidth = charWidth * searchTerm.length;
-                    const highlightHeight = item.height || 10;
+                const matchWidth = charWidth * searchTerm.length;
+                const offset = charWidth * match.charIndex;
 
-                    // Scale the height
-                    const scaledHeight = highlightHeight * viewport.scale;
+                // Calculate coordinates
+                // tx[4] is x, tx[5] is y (baseline)
+                const left = tx[4] + offset;
+                const top = tx[5] - itemHeight; // Move up from baseline
 
-                    // Draw highlight rectangle
-                    context.fillRect(
-                        highlightX,
-                        viewport.height - highlightY - scaledHeight,
-                        highlightWidth,
-                        scaledHeight
-                    );
+                // Create highlight div
+                const highlightDiv = document.createElement('div');
 
-                    matchStartIndex += searchTerm.length;
-                }
+                // Determine if this is the current active match
+                const globalMatchIndex = searchMatches.findIndex(
+                    m => m.pageNum === match.pageNum &&
+                        m.textIndex === match.textIndex &&
+                        m.charIndex === match.charIndex
+                );
+                const isCurrentMatch = globalMatchIndex === currentMatchIndex;
+
+                // Style the highlight box
+                highlightDiv.style.position = 'absolute';
+                highlightDiv.style.left = `${left}px`;
+                highlightDiv.style.top = `${top}px`;
+                highlightDiv.style.width = `${matchWidth}px`;
+                highlightDiv.style.height = `${itemHeight}px`;
+                highlightDiv.style.backgroundColor = isCurrentMatch ? '#FF9632' : '#FFEB3B'; // Orange for active, Yellow for others
+                highlightDiv.style.opacity = '0.4';
+                highlightDiv.style.pointerEvents = 'none';
+                highlightDiv.style.borderRadius = '2px';
+                highlightDiv.style.mixBlendMode = 'multiply'; // Better highlighting effect
+
+                highlightLayer.appendChild(highlightDiv);
             });
-
-            context.restore();
         } catch (error) {
-            console.error('Error highlighting matches:', error);
+            console.error('Error rendering highlights:', error);
         }
     };
 
+    // Navigation Handlers
     const goToNextMatch = () => {
         if (searchMatches.length === 0) return;
         const nextIndex = (currentMatchIndex + 1) % searchMatches.length;
@@ -393,6 +431,9 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                                     onClick={() => {
                                         setSearchQuery('');
                                         setSearchMatches([]);
+                                        if (highlightLayerRef.current) {
+                                            highlightLayerRef.current.innerHTML = '';
+                                        }
                                     }}
                                     className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                                 >
@@ -445,7 +486,7 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                 </div>
             )}
 
-            {/* PDF Canvas */}
+            {/* PDF Canvas with Highlight Layer */}
             <div className="flex justify-center rounded-2xl border border-gray-200 bg-gray-50 p-8 dark:border-gray-800 dark:bg-gray-900/50">
                 {loading ? (
                     <div className="flex flex-col items-center gap-4 py-20">
@@ -454,11 +495,26 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                     </div>
                 ) : (
                     <div className="overflow-auto max-h-[70vh]">
-                        <canvas
-                            ref={canvasRef}
-                            className="mx-auto shadow-2xl"
-                            style={{ display: 'block' }}
-                        />
+                        <div ref={containerRef} style={{ position: 'relative', display: 'inline-block' }}>
+                            <canvas
+                                ref={canvasRef}
+                                className="mx-auto shadow-2xl"
+                                style={{ display: 'block' }}
+                            />
+                            <div
+                                ref={highlightLayerRef}
+                                className="pdf-highlight-layer"
+                                style={{
+                                    position: 'absolute',
+                                    left: 0,
+                                    top: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    overflow: 'hidden',
+                                    pointerEvents: 'none'
+                                }}
+                            />
+                        </div>
                     </div>
                 )}
             </div>
