@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCw, Download, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCw, Download, Search, ChevronUp, ChevronDown, X, Printer } from 'lucide-react';
 
 // Set up the worker - use static file from public directory
 if (typeof window !== 'undefined') {
@@ -40,6 +40,24 @@ export default function PDFViewer({ file }: PDFViewerProps) {
     const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
     const [showSearch, setShowSearch] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
+    const [hasSearched, setHasSearched] = useState(false);
+
+    // Debounced Search Effect
+    useEffect(() => {
+        const delayDebounceFn = setTimeout(() => {
+            if (searchQuery.trim()) {
+                performSearch();
+            } else {
+                setSearchMatches([]);
+                setHasSearched(false);
+                if (highlightLayerRef.current) {
+                    highlightLayerRef.current.innerHTML = '';
+                }
+            }
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchQuery]);
 
     // Load PDF
     useEffect(() => {
@@ -156,12 +174,13 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                 renderTaskRef.current = null;
             }
         };
-    }, [pdfDoc, currentPage, scale, rotation, searchQuery, currentMatchIndex, searchMatches]); // Added search dependencies to re-render highlights
+    }, [pdfDoc, currentPage, scale, rotation, searchQuery, currentMatchIndex, searchMatches]);
 
     // Search Functionality
     const performSearch = async () => {
         if (!pdfDoc || !searchQuery.trim()) {
             setSearchMatches([]);
+            setHasSearched(false);
             if (highlightLayerRef.current) {
                 highlightLayerRef.current.innerHTML = '';
             }
@@ -169,36 +188,53 @@ export default function PDFViewer({ file }: PDFViewerProps) {
         }
 
         setIsSearching(true);
-        const matches: SearchMatch[] = [];
+        setHasSearched(true);
 
         try {
+            // Search all pages in parallel
+            const searchPromises = [];
             for (let i = 1; i <= totalPages; i++) {
-                const page = await pdfDoc.getPage(i);
-                const textContent = await page.getTextContent();
+                searchPromises.push(
+                    pdfDoc.getPage(i).then(async (page: any) => {
+                        const textContent = await page.getTextContent();
+                        const pageMatches: SearchMatch[] = [];
 
-                textContent.items.forEach((item: any, textIndex: number) => {
-                    const text = item.str;
-                    const searchTerm = searchQuery.toLowerCase();
-                    const textLower = text.toLowerCase();
-                    let charIndex = 0;
+                        textContent.items.forEach((item: any, textIndex: number) => {
+                            const text = item.str;
+                            const searchTerm = searchQuery.toLowerCase();
+                            const textLower = text.toLowerCase();
+                            let charIndex = 0;
 
-                    while ((charIndex = textLower.indexOf(searchTerm, charIndex)) !== -1) {
-                        matches.push({
-                            pageNum: i,
-                            textIndex,
-                            charIndex
+                            while ((charIndex = textLower.indexOf(searchTerm, charIndex)) !== -1) {
+                                pageMatches.push({
+                                    pageNum: i,
+                                    textIndex,
+                                    charIndex
+                                });
+                                charIndex += searchTerm.length;
+                            }
                         });
-                        charIndex += searchTerm.length;
-                    }
-                });
+                        return pageMatches;
+                    })
+                );
             }
 
-            setSearchMatches(matches);
+            const results = await Promise.all(searchPromises);
+            const allMatches = results.flat().sort((a, b) => {
+                if (a.pageNum !== b.pageNum) return a.pageNum - b.pageNum;
+                if (a.textIndex !== b.textIndex) return a.textIndex - b.textIndex;
+                return a.charIndex - b.charIndex;
+            });
+
+            setSearchMatches(allMatches);
             setCurrentMatchIndex(0);
 
-            // Navigate to first match
-            if (matches.length > 0) {
-                setCurrentPage(matches[0].pageNum);
+            // Navigate to first match if we have results
+            if (allMatches.length > 0) {
+                // Only change page if the first match is not on the current page
+                if (allMatches[0].pageNum !== currentPage) {
+                    setCurrentPage(allMatches[0].pageNum);
+                }
             }
         } catch (error) {
             console.error('Search error:', error);
@@ -233,8 +269,6 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                 const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
 
                 // Calculate dimensions
-                // item.width is the width in PDF units
-                // item.height is the height in PDF units
                 const fontHeight = Math.sqrt(tx[2] * tx[2] + tx[3] * tx[3]);
                 const itemHeight = item.height > 0 ? item.height * viewport.scale : fontHeight;
 
@@ -245,7 +279,6 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                 const offset = charWidth * match.charIndex;
 
                 // Calculate coordinates
-                // tx[4] is x, tx[5] is y (baseline)
                 const left = tx[4] + offset;
                 const top = tx[5] - itemHeight; // Move up from baseline
 
@@ -266,11 +299,11 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                 highlightDiv.style.top = `${top}px`;
                 highlightDiv.style.width = `${matchWidth}px`;
                 highlightDiv.style.height = `${itemHeight}px`;
-                highlightDiv.style.backgroundColor = isCurrentMatch ? '#FF9632' : '#FFEB3B'; // Orange for active, Yellow for others
+                highlightDiv.style.backgroundColor = isCurrentMatch ? '#FF9632' : '#FFEB3B';
                 highlightDiv.style.opacity = '0.4';
                 highlightDiv.style.pointerEvents = 'none';
                 highlightDiv.style.borderRadius = '2px';
-                highlightDiv.style.mixBlendMode = 'multiply'; // Better highlighting effect
+                highlightDiv.style.mixBlendMode = 'multiply';
 
                 highlightLayer.appendChild(highlightDiv);
             });
@@ -312,6 +345,49 @@ export default function PDFViewer({ file }: PDFViewerProps) {
 
     const handleRotate = () => {
         setRotation((prev) => (prev + 90) % 360);
+    };
+
+    const handlePrint = () => {
+        const url = URL.createObjectURL(file);
+        const iframe = document.createElement('iframe');
+
+        // Hide iframe but keep it in render tree
+        iframe.style.position = 'fixed';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.top = '0';
+        iframe.style.left = '0';
+        iframe.style.border = 'none';
+        iframe.style.visibility = 'hidden';
+
+        iframe.src = url;
+        document.body.appendChild(iframe);
+
+        iframe.onload = () => {
+            // Use a small timeout to ensure content is ready
+            setTimeout(() => {
+                if (!iframe.contentWindow) return;
+
+                const cleanup = () => {
+                    try {
+                        document.body.removeChild(iframe);
+                        URL.revokeObjectURL(url);
+                    } catch (e) {
+                        // Ignore cleanup errors
+                    }
+                };
+
+                iframe.contentWindow.addEventListener('afterprint', cleanup);
+
+                try {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                } catch (e) {
+                    console.error('Print failed', e);
+                    cleanup();
+                }
+            }, 500);
+        };
     };
 
     const handleDownload = () => {
@@ -403,6 +479,14 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                     </button>
 
                     <button
+                        onClick={handlePrint}
+                        className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-gray-700 transition-all hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                        aria-label="Print"
+                    >
+                        <Printer className="h-5 w-5" />
+                    </button>
+
+                    <button
                         onClick={handleDownload}
                         className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 px-4 py-2 font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:shadow-xl hover:shadow-blue-500/40"
                         aria-label="Download"
@@ -423,7 +507,7 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && performSearch()}
-                                placeholder="Search in PDF..."
+                                placeholder="Search Text in PDF here ..."
                                 className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 pr-10 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
                             />
                             {searchQuery && (
@@ -431,6 +515,7 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                                     onClick={() => {
                                         setSearchQuery('');
                                         setSearchMatches([]);
+                                        setHasSearched(false);
                                         if (highlightLayerRef.current) {
                                             highlightLayerRef.current.innerHTML = '';
                                         }
@@ -478,7 +563,7 @@ export default function PDFViewer({ file }: PDFViewerProps) {
                         )}
                     </div>
 
-                    {searchMatches.length === 0 && searchQuery && !isSearching && (
+                    {searchMatches.length === 0 && searchQuery && !isSearching && hasSearched && (
                         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                             No results found
                         </p>
