@@ -11,6 +11,7 @@ A modern, professional PDF viewer desktop application built with **Next.js**, **
 - 🔎 **Text Search** - Search for text in PDFs with yellow highlighting
 - ⬆️⬇️ **Search Navigation** - Navigate through search results with prev/next buttons
 - 🔄 **Rotation** - Rotate PDF pages for better viewing
+- 🖨️ **Print** - Print PDF documents directly from the app
 - 💾 **Download** - Download PDFs with a single click
 - 🎨 **Modern UI** - Beautiful, premium design with dark mode support
 - 💻 **Desktop App** - Packaged as a Windows executable
@@ -119,6 +120,7 @@ og-pdf-app/
    - **Zoom In/Out** - Adjust the zoom level
    - **Search** - Click the search icon to open the search bar
    - **Rotate** - Rotate the page view
+   - **Print** - Print the PDF document
    - **Download** - Save the PDF to your device
 4. **Search for text**:
    - Click the **Search** icon (magnifying glass)

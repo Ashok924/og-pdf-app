@@ -26,6 +26,7 @@ The **PDF Viewer Desktop App** is a desktop application that allows users to upl
 - Text search with highlighting  
 - Navigate through search results  
 - Rotation & download  
+- Print PDF documents  
 - Package as Windows EXE  
 
 ---
@@ -81,8 +82,9 @@ root/
 6. Text search with highlighting  
 7. Search result navigation  
 8. Rotate pages  
-9. Download PDF  
-10. EXE packaging  
+9. Print PDF  
+10. Download PDF  
+11. EXE packaging  
 
 ---
 
